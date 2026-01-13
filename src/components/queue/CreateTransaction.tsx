@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQueue } from '@/hooks/useQueue';
 import { supabase } from '@/integrations/supabase/client';
 import { TRANSACTION_LABELS, TransactionType } from '@/types/queue';
@@ -20,8 +20,22 @@ export function CreateTransaction() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('waiting');
 
-  const { createQueueItem } = useQueue();
+  const { createQueueItem, windows } = useQueue();
   const { toast } = useToast();
+
+  // Calculate available services (not disabled by ALL windows)
+  const availableServices = useMemo(() => {
+    const activeWindows = windows.filter(w => w.is_active);
+    if (activeWindows.length === 0) return Object.keys(TRANSACTION_LABELS) as TransactionType[];
+
+    return (Object.keys(TRANSACTION_LABELS) as TransactionType[]).filter(service => {
+      // Service is available if at least one active window doesn't have it disabled
+      return activeWindows.some(window => {
+        const disabledServices = window.disabled_services || [];
+        return !disabledServices.includes(service);
+      });
+    });
+  }, [windows]);
 
   // Listen for status changes on the created ticket
   useEffect(() => {
@@ -216,11 +230,19 @@ export function CreateTransaction() {
                 <SelectValue placeholder="Select transaction type" />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(TRANSACTION_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
+                {Object.entries(TRANSACTION_LABELS).map(([value, label]) => {
+                  const isAvailable = availableServices.includes(value as TransactionType);
+                  return (
+                    <SelectItem 
+                      key={value} 
+                      value={value}
+                      disabled={!isAvailable}
+                      className={!isAvailable ? 'opacity-50' : ''}
+                    >
+                      {label}{!isAvailable ? ' (Unavailable)' : ''}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
