@@ -180,13 +180,21 @@ export function useQueue() {
       .eq('id', windowId);
   };
 
-  const submitFeedback = async (queueId: string, rating: number, comment?: string) => {
+  const submitFeedback = async (
+    queueId: string,
+    rating: number,
+    comment?: string,
+    sentiment?: string,
+    sentimentScore?: number
+  ) => {
     const { error } = await supabase
       .from('feedback')
       .insert({
         queue_id: queueId,
         rating,
         comment: comment || null,
+        sentiment: sentiment || null,
+        sentiment_score: sentimentScore || null,
       });
 
     if (error) throw error;

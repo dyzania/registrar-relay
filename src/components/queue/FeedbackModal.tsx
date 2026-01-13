@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQueue } from '@/hooks/useQueue';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Star, Send, ThumbsUp } from 'lucide-react';
+import { Star, Send, ThumbsUp, Brain, Loader2 } from 'lucide-react';
+import { analyzeSentiment, preloadSentimentModel } from '@/utils/sentimentAnalysis';
 
 interface FeedbackModalProps {
   open: boolean;
@@ -19,9 +20,17 @@ export function FeedbackModal({ open, onClose, queueId, queueNumber }: FeedbackM
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const { submitFeedback } = useQueue();
   const { toast } = useToast();
+
+  // Preload sentiment model when modal opens
+  useEffect(() => {
+    if (open) {
+      preloadSentimentModel();
+    }
+  }, [open]);
 
   const handleSubmit = async () => {
     if (rating === 0) {
@@ -34,8 +43,26 @@ export function FeedbackModal({ open, onClose, queueId, queueNumber }: FeedbackM
     }
 
     setIsSubmitting(true);
+    
     try {
-      await submitFeedback(queueId, rating, comment);
+      // Analyze sentiment if there's a comment
+      let sentiment: string | undefined;
+      let sentimentScore: number | undefined;
+
+      if (comment.trim()) {
+        setIsAnalyzing(true);
+        try {
+          const result = await analyzeSentiment(comment);
+          sentiment = result.sentiment;
+          sentimentScore = result.score;
+        } catch (error) {
+          console.error('Sentiment analysis failed:', error);
+          // Continue without sentiment if analysis fails
+        }
+        setIsAnalyzing(false);
+      }
+
+      await submitFeedback(queueId, rating, comment, sentiment, sentimentScore);
       setIsSubmitted(true);
       toast({
         title: 'Thank you!',
@@ -49,6 +76,7 @@ export function FeedbackModal({ open, onClose, queueId, queueNumber }: FeedbackM
       });
     } finally {
       setIsSubmitting(false);
+      setIsAnalyzing(false);
     }
   };
 
@@ -142,8 +170,22 @@ export function FeedbackModal({ open, onClose, queueId, queueNumber }: FeedbackM
             disabled={isSubmitting || rating === 0}
             className="w-full h-12 text-lg font-semibold gradient-primary hover:opacity-90"
           >
-            <Send className="w-5 h-5 mr-2" />
-            {isSubmitting ? 'Submitting...' : 'Submit Feedback'}
+            {isAnalyzing ? (
+              <>
+                <Brain className="w-5 h-5 mr-2 animate-pulse" />
+                Analyzing...
+              </>
+            ) : isSubmitting ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              <>
+                <Send className="w-5 h-5 mr-2" />
+                Submit Feedback
+              </>
+            )}
           </Button>
         </div>
       </DialogContent>
