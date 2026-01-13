@@ -1,25 +1,44 @@
 import { useState } from 'react';
 import { useQueue } from '@/hooks/useQueue';
-import { TRANSACTION_LABELS, QueueItem } from '@/types/queue';
+import { TRANSACTION_LABELS, QueueItem, TransactionType } from '@/types/queue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { UserCheck, CheckCircle, PhoneCall, Clock, Users, ListOrdered } from 'lucide-react';
+import { UserCheck, CheckCircle, PhoneCall, Clock, Users, ListOrdered, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 interface WindowStaffProps {
   windowNumber: number;
 }
 
+const ALL_TRANSACTION_TYPES: TransactionType[] = [
+  'grade_request',
+  'enrollment',
+  'document_request',
+  'payment',
+  'clearance',
+  'other',
+];
+
 export function WindowStaff({ windowNumber }: WindowStaffProps) {
-  const { windows, waitingQueue, callNext, completeTransaction, getWindowQueue, MAX_CUSTOMERS_PER_WINDOW } = useQueue();
+  const { windows, waitingQueue, callNext, completeTransaction, getWindowQueue, toggleService, MAX_CUSTOMERS_PER_WINDOW } = useQueue();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
   const { toast } = useToast();
 
   const window = windows.find(w => w.window_number === windowNumber);
   const windowQueue = window ? getWindowQueue(window.id) : [];
   const sortedWindowQueue = [...windowQueue].sort((a, b) => a.queue_number - b.queue_number);
-  const canCallMore = windowQueue.length < MAX_CUSTOMERS_PER_WINDOW && waitingQueue.length > 0;
+  const disabledServices = window?.disabled_services || [];
+  const enabledServicesCount = ALL_TRANSACTION_TYPES.length - disabledServices.length;
+  
+  // Filter waiting queue by enabled services for this window
+  const eligibleWaitingQueue = waitingQueue.filter(
+    q => !disabledServices.includes(q.transaction_type)
+  );
+  const canCallMore = windowQueue.length < MAX_CUSTOMERS_PER_WINDOW && eligibleWaitingQueue.length > 0;
 
   const handleCallNext = async () => {
     if (!window) return;
@@ -38,8 +57,8 @@ export function WindowStaff({ windowNumber }: WindowStaffProps) {
         });
       } else {
         toast({
-          title: 'No Customers Waiting',
-          description: 'The queue is empty.',
+          title: 'No Eligible Customers',
+          description: 'No customers waiting for enabled services.',
         });
       }
     } catch (error) {
@@ -73,6 +92,16 @@ export function WindowStaff({ windowNumber }: WindowStaffProps) {
     }
   };
 
+  const handleToggleService = async (service: TransactionType) => {
+    if (!window) return;
+    await toggleService(window.id, service);
+    const isDisabling = !disabledServices.includes(service);
+    toast({
+      title: isDisabling ? 'Service Disabled' : 'Service Enabled',
+      description: `${TRANSACTION_LABELS[service]} is now ${isDisabling ? 'disabled' : 'enabled'} at this window.`,
+    });
+  };
+
   return (
     <Card className="queue-card h-full">
       <CardHeader className="gradient-primary text-primary-foreground">
@@ -88,12 +117,43 @@ export function WindowStaff({ windowNumber }: WindowStaffProps) {
             </Badge>
             <Badge variant="secondary" className="flex items-center gap-1">
               <Users className="w-3 h-3" />
-              {waitingQueue.length} waiting
+              {eligibleWaitingQueue.length} eligible
             </Badge>
           </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-6 space-y-4">
+        {/* Service Settings */}
+        <Collapsible open={servicesOpen} onOpenChange={setServicesOpen}>
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" className="w-full justify-between">
+              <span className="flex items-center gap-2">
+                <Settings className="w-4 h-4" />
+                Services ({enabledServicesCount}/{ALL_TRANSACTION_TYPES.length} enabled)
+              </span>
+              {servicesOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-3">
+            <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
+              {ALL_TRANSACTION_TYPES.map((service) => {
+                const isEnabled = !disabledServices.includes(service);
+                return (
+                  <div key={service} className="flex items-center justify-between py-2">
+                    <span className={`text-sm ${!isEnabled ? 'text-muted-foreground line-through' : ''}`}>
+                      {TRANSACTION_LABELS[service]}
+                    </span>
+                    <Switch
+                      checked={isEnabled}
+                      onCheckedChange={() => handleToggleService(service)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
         {/* Current Customers in Window */}
         {sortedWindowQueue.length > 0 ? (
           <div className="space-y-3">
@@ -156,7 +216,7 @@ export function WindowStaff({ windowNumber }: WindowStaffProps) {
           className="w-full h-12 text-lg font-semibold"
         >
           <PhoneCall className="w-5 h-5 mr-2" />
-          Call Next ({waitingQueue.length} waiting)
+          Call Next ({eligibleWaitingQueue.length} eligible)
         </Button>
 
         {windowQueue.length >= MAX_CUSTOMERS_PER_WINDOW && (
@@ -165,12 +225,18 @@ export function WindowStaff({ windowNumber }: WindowStaffProps) {
           </p>
         )}
 
+        {disabledServices.length > 0 && (
+          <p className="text-center text-xs text-muted-foreground">
+            Disabled: {disabledServices.map(s => TRANSACTION_LABELS[s as TransactionType]).join(', ')}
+          </p>
+        )}
+
         {/* Upcoming Preview */}
-        {waitingQueue.length > 0 && windowQueue.length < MAX_CUSTOMERS_PER_WINDOW && (
+        {eligibleWaitingQueue.length > 0 && windowQueue.length < MAX_CUSTOMERS_PER_WINDOW && (
           <div className="pt-4 border-t">
-            <p className="text-sm font-medium text-muted-foreground mb-3">Next in Line</p>
+            <p className="text-sm font-medium text-muted-foreground mb-3">Next Eligible</p>
             <div className="space-y-2">
-              {waitingQueue.slice(0, 3).map((item, index) => (
+              {eligibleWaitingQueue.slice(0, 3).map((item, index) => (
                 <div
                   key={item.id}
                   className={`flex items-center justify-between p-3 rounded-lg ${
