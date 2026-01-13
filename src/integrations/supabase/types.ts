@@ -115,6 +115,7 @@ export type Database = {
         Row: {
           created_at: string | null
           current_queue_id: string | null
+          disabled_services: string[] | null
           id: number
           is_active: boolean | null
           window_number: number
@@ -122,6 +123,7 @@ export type Database = {
         Insert: {
           created_at?: string | null
           current_queue_id?: string | null
+          disabled_services?: string[] | null
           id?: number
           is_active?: boolean | null
           window_number: number
@@ -129,6 +131,7 @@ export type Database = {
         Update: {
           created_at?: string | null
           current_queue_id?: string | null
+          disabled_services?: string[] | null
           id?: number
           is_active?: boolean | null
           window_number?: number

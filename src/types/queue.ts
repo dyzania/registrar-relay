@@ -26,6 +26,7 @@ export interface Window {
   window_number: number;
   is_active: boolean;
   current_queue_id: string | null;
+  disabled_services: string[] | null;
   created_at: string;
 }
 

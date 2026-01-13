@@ -99,14 +99,20 @@ export function useQueue() {
   };
 
   const callNext = async (windowId: number) => {
+    const window = windows.find(w => w.id === windowId);
+    if (!window) return null;
+
     // Check if window already has max customers
     const windowQueue = getWindowQueue(windowId);
     if (windowQueue.length >= MAX_CUSTOMERS_PER_WINDOW) {
       return null;
     }
 
-    // Find next waiting item
-    const waitingItems = queue.filter(q => q.status === 'waiting');
+    // Find next waiting item that matches enabled services
+    const disabledServices = window.disabled_services || [];
+    const waitingItems = queue.filter(
+      q => q.status === 'waiting' && !disabledServices.includes(q.transaction_type)
+    );
     if (waitingItems.length === 0) return null;
 
     const nextItem = waitingItems[0];
@@ -130,6 +136,23 @@ export function useQueue() {
     }
 
     return nextItem;
+  };
+
+  const toggleService = async (windowId: number, service: TransactionType) => {
+    const window = windows.find(w => w.id === windowId);
+    if (!window) return;
+
+    const currentDisabled = window.disabled_services || [];
+    const isCurrentlyDisabled = currentDisabled.includes(service);
+    
+    const newDisabled = isCurrentlyDisabled
+      ? currentDisabled.filter(s => s !== service)
+      : [...currentDisabled, service];
+
+    await supabase
+      .from('windows')
+      .update({ disabled_services: newDisabled })
+      .eq('id', windowId);
   };
 
   const completeTransaction = async (queueId: string, windowId: number) => {
@@ -186,6 +209,7 @@ export function useQueue() {
     completeTransaction,
     submitFeedback,
     getWindowQueue,
+    toggleService,
     MAX_CUSTOMERS_PER_WINDOW,
     refetch: () => Promise.all([fetchQueue(), fetchWindows()]),
   };
