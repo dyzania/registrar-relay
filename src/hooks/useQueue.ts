@@ -92,7 +92,19 @@ export function useQueue() {
     return data as QueueItem;
   };
 
+  const MAX_CUSTOMERS_PER_WINDOW = 5;
+
+  const getWindowQueue = (windowId: number) => {
+    return queue.filter(q => q.window_id === windowId && q.status === 'in_progress');
+  };
+
   const callNext = async (windowId: number) => {
+    // Check if window already has max customers
+    const windowQueue = getWindowQueue(windowId);
+    if (windowQueue.length >= MAX_CUSTOMERS_PER_WINDOW) {
+      return null;
+    }
+
     // Find next waiting item
     const waitingItems = queue.filter(q => q.status === 'waiting');
     if (waitingItems.length === 0) return null;
@@ -109,11 +121,13 @@ export function useQueue() {
       })
       .eq('id', nextItem.id);
 
-    // Update window
-    await supabase
-      .from('windows')
-      .update({ current_queue_id: nextItem.id })
-      .eq('id', windowId);
+    // Update window's current_queue_id to the first item if not set
+    if (windowQueue.length === 0) {
+      await supabase
+        .from('windows')
+        .update({ current_queue_id: nextItem.id })
+        .eq('id', windowId);
+    }
 
     return nextItem;
   };
@@ -127,9 +141,19 @@ export function useQueue() {
       })
       .eq('id', queueId);
 
+    // Find remaining items in this window's queue
+    const remainingItems = queue.filter(
+      q => q.window_id === windowId && q.status === 'in_progress' && q.id !== queueId
+    );
+
+    // Update window's current_queue_id to next item or null
+    const nextCurrentId = remainingItems.length > 0 
+      ? remainingItems.sort((a, b) => a.queue_number - b.queue_number)[0].id 
+      : null;
+
     await supabase
       .from('windows')
-      .update({ current_queue_id: null })
+      .update({ current_queue_id: nextCurrentId })
       .eq('id', windowId);
   };
 
@@ -161,6 +185,8 @@ export function useQueue() {
     callNext,
     completeTransaction,
     submitFeedback,
+    getWindowQueue,
+    MAX_CUSTOMERS_PER_WINDOW,
     refetch: () => Promise.all([fetchQueue(), fetchWindows()]),
   };
 }
