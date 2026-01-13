@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQueue } from '@/hooks/useQueue';
+import { supabase } from '@/integrations/supabase/client';
 import { TRANSACTION_LABELS, TransactionType } from '@/types/queue';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,17 +8,55 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Ticket, User, FileText, CheckCircle } from 'lucide-react';
+import { Ticket, User, FileText, CheckCircle, Clock } from 'lucide-react';
+import { FeedbackModal } from './FeedbackModal';
 
 export function CreateTransaction() {
   const [studentName, setStudentName] = useState('');
   const [studentId, setStudentId] = useState('');
   const [transactionType, setTransactionType] = useState<TransactionType | ''>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [createdTicket, setCreatedTicket] = useState<number | null>(null);
+  const [createdTicket, setCreatedTicket] = useState<{ id: string; number: number } | null>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState<string>('waiting');
 
   const { createQueueItem } = useQueue();
   const { toast } = useToast();
+
+  // Listen for status changes on the created ticket
+  useEffect(() => {
+    if (!createdTicket) return;
+
+    const channel = supabase
+      .channel(`ticket-${createdTicket.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'queue',
+          filter: `id=eq.${createdTicket.id}`,
+        },
+        (payload) => {
+          const newStatus = payload.new.status as string;
+          setCurrentStatus(newStatus);
+          
+          if (newStatus === 'completed') {
+            setShowFeedback(true);
+          } else if (newStatus === 'in_progress') {
+            toast({
+              title: 'Your turn!',
+              description: 'Please proceed to the window.',
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [createdTicket, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +73,8 @@ export function CreateTransaction() {
     setIsSubmitting(true);
     try {
       const item = await createQueueItem(studentName, transactionType, studentId);
-      setCreatedTicket(item.queue_number);
+      setCreatedTicket({ id: item.id, number: item.queue_number });
+      setCurrentStatus('waiting');
       toast({
         title: 'Ticket Created!',
         description: `Your queue number is ${String(item.queue_number).padStart(3, '0')}`,
@@ -55,32 +95,72 @@ export function CreateTransaction() {
     setStudentId('');
     setTransactionType('');
     setCreatedTicket(null);
+    setShowFeedback(false);
+    setCurrentStatus('waiting');
   };
 
   if (createdTicket !== null) {
     return (
-      <Card className="queue-card max-w-md mx-auto">
-        <CardContent className="p-8 text-center space-y-6">
-          <div className="w-20 h-20 rounded-full bg-success/10 flex items-center justify-center mx-auto">
-            <CheckCircle className="w-10 h-10 text-success" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-serif font-bold text-foreground mb-2">
-              Ticket Created!
-            </h2>
-            <p className="text-muted-foreground">Your queue number is</p>
-          </div>
-          <div className="queue-number text-primary py-4 px-8 bg-primary/5 rounded-2xl inline-block">
-            {String(createdTicket).padStart(3, '0')}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Please wait for your number to be called. Watch the queue board for updates.
-          </p>
-          <Button onClick={resetForm} variant="outline" className="w-full">
-            Create Another Ticket
-          </Button>
-        </CardContent>
-      </Card>
+      <>
+        <Card className="queue-card max-w-md mx-auto">
+          <CardContent className="p-8 text-center space-y-6">
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${
+              currentStatus === 'in_progress' 
+                ? 'bg-accent/10 animate-pulse' 
+                : currentStatus === 'completed'
+                ? 'bg-success/10'
+                : 'bg-primary/10'
+            }`}>
+              {currentStatus === 'in_progress' ? (
+                <Clock className="w-10 h-10 text-accent" />
+              ) : (
+                <CheckCircle className="w-10 h-10 text-success" />
+              )}
+            </div>
+            <div>
+              <h2 className="text-2xl font-serif font-bold text-foreground mb-2">
+                {currentStatus === 'in_progress' ? 'Your Turn!' : 
+                 currentStatus === 'completed' ? 'Transaction Complete!' : 
+                 'Ticket Created!'}
+              </h2>
+              <p className="text-muted-foreground">
+                {currentStatus === 'in_progress' 
+                  ? 'Please proceed to the window' 
+                  : currentStatus === 'completed'
+                  ? 'Thank you for your patience'
+                  : 'Your queue number is'}
+              </p>
+            </div>
+            <div className={`queue-number py-4 px-8 rounded-2xl inline-block ${
+              currentStatus === 'in_progress' 
+                ? 'text-accent bg-accent/5' 
+                : 'text-primary bg-primary/5'
+            }`}>
+              {String(createdTicket.number).padStart(3, '0')}
+            </div>
+            {currentStatus === 'waiting' && (
+              <p className="text-sm text-muted-foreground">
+                Please wait for your number to be called. Watch the queue board for updates.
+              </p>
+            )}
+            {currentStatus === 'completed' && (
+              <Button onClick={resetForm} variant="outline" className="w-full">
+                Create Another Ticket
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+        
+        <FeedbackModal
+          open={showFeedback}
+          onClose={() => {
+            setShowFeedback(false);
+            resetForm();
+          }}
+          queueId={createdTicket.id}
+          queueNumber={createdTicket.number}
+        />
+      </>
     );
   }
 
