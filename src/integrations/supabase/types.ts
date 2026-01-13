@@ -21,6 +21,8 @@ export type Database = {
           id: string
           queue_id: string | null
           rating: number | null
+          sentiment: string | null
+          sentiment_score: number | null
         }
         Insert: {
           comment?: string | null
@@ -28,6 +30,8 @@ export type Database = {
           id?: string
           queue_id?: string | null
           rating?: number | null
+          sentiment?: string | null
+          sentiment_score?: number | null
         }
         Update: {
           comment?: string | null
@@ -35,6 +39,8 @@ export type Database = {
           id?: string
           queue_id?: string | null
           rating?: number | null
+          sentiment?: string | null
+          sentiment_score?: number | null
         }
         Relationships: [
           {
