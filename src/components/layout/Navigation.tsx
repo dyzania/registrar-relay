@@ -1,10 +1,11 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, Ticket, Users, BarChart3, Monitor } from 'lucide-react';
+import { LayoutDashboard, Ticket, Users, BarChart3, Monitor, Search } from 'lucide-react';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Queue Board', icon: LayoutDashboard },
   { path: '/register', label: 'Get Ticket', icon: Ticket },
+  { path: '/my-ticket', label: 'My Ticket', icon: Search },
   { path: '/staff', label: 'Staff Panel', icon: Users },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/display', label: 'Display', icon: Monitor },
