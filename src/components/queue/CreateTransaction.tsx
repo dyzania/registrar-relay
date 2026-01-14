@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Ticket, User, FileText, CheckCircle, Clock } from 'lucide-react';
+import { Ticket, User, FileText, CheckCircle, Clock, Users, X } from 'lucide-react';
 import { FeedbackModal } from './FeedbackModal';
 
 export function CreateTransaction() {
@@ -20,8 +20,15 @@ export function CreateTransaction() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('waiting');
 
-  const { createQueueItem, windows } = useQueue();
+  const { createQueueItem, windows, waitingQueue } = useQueue();
   const { toast } = useToast();
+
+  // Calculate queue position (how many people are ahead)
+  const queuePosition = useMemo(() => {
+    if (!createdTicket || currentStatus !== 'waiting') return 0;
+    const position = waitingQueue.findIndex(q => q.id === createdTicket.id);
+    return position === -1 ? 0 : position;
+  }, [createdTicket, waitingQueue, currentStatus]);
 
   // Calculate available services (not disabled by ALL windows)
   const availableServices = useMemo(() => {
@@ -113,6 +120,31 @@ export function CreateTransaction() {
     setCurrentStatus('waiting');
   };
 
+  const handleCancelTicket = async () => {
+    if (!createdTicket) return;
+    
+    try {
+      const { error } = await supabase
+        .from('queue')
+        .update({ status: 'cancelled' })
+        .eq('id', createdTicket.id);
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Ticket Cancelled',
+        description: 'Your queue ticket has been cancelled.',
+      });
+      resetForm();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to cancel ticket. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   if (createdTicket !== null) {
     return (
       <>
@@ -153,9 +185,39 @@ export function CreateTransaction() {
               {String(createdTicket.number).padStart(3, '0')}
             </div>
             {currentStatus === 'waiting' && (
-              <p className="text-sm text-muted-foreground">
-                Please wait for your number to be called. Watch the queue board for updates.
-              </p>
+              <div className="space-y-4">
+                {/* Queue Position Indicator */}
+                <div className="bg-muted/50 rounded-xl p-4 space-y-2">
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Users className="w-4 h-4" />
+                    <span className="text-sm font-medium">Queue Position</span>
+                  </div>
+                  <div className="text-center">
+                    {queuePosition === 0 ? (
+                      <p className="text-lg font-semibold text-accent">You're next!</p>
+                    ) : (
+                      <p className="text-lg">
+                        <span className="font-bold text-2xl text-primary">{queuePosition}</span>
+                        <span className="text-muted-foreground"> {queuePosition === 1 ? 'person' : 'people'} ahead of you</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+                
+                <p className="text-sm text-muted-foreground">
+                  Please wait for your number to be called. Watch the queue board for updates.
+                </p>
+                
+                {/* Cancel Button */}
+                <Button 
+                  onClick={handleCancelTicket} 
+                  variant="outline" 
+                  className="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel Ticket
+                </Button>
+              </div>
             )}
             {currentStatus === 'completed' && (
               <Button onClick={resetForm} variant="outline" className="w-full">
